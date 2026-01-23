@@ -3,7 +3,6 @@ import random
 import time
 import math
 
-# ---------------- НАСТРОЙКИ ----------------
 WALL = 10
 PASSAGE = 40
 CELL = WALL + PASSAGE
@@ -16,7 +15,7 @@ SCREEN_WIDTH = MAZE_WIDTH
 SCREEN_HEIGHT = MAZE_HEIGHT + 90
 HUD_HEIGHT = SCREEN_HEIGHT - MAZE_HEIGHT
 
-WINDOW_TITLE = "bullet-in-the-mosaic"
+WINDOW_TITLE = "bullet in the mosaic"
 
 BACKGROUND_COLOR = arcade.color.BLACK
 HUD_COLOR = arcade.color.DARK_GRAY
@@ -33,11 +32,10 @@ BUTTON_COLOR = arcade.color.LIGHT_GRAY
 BUTTON_HOVER_COLOR = arcade.color.GRAY
 BUTTON_TEXT_COLOR = arcade.color.BLACK
 
-COOLDOWN_MAX = 7  # секунд
+COOLDOWN_MAX = 7
 
 
 def center_to_lbwh(cx, cy, w, h):
-    """Конвертируем центр в left-bottom-width-height"""
     return cx - w / 2, cy - h / 2, w, h
 
 
@@ -62,10 +60,6 @@ class Bullet:
         self.radius = radius
         self.color = color
 
-    def move(self):
-        self.x += self.dx
-        self.y += self.dy
-
     def draw(self):
         arcade.draw_circle_filled(self.x, self.y, self.radius, self.color)
 
@@ -84,30 +78,34 @@ class GameWindow(arcade.Window):
         self.start_rect = None
         self.end_rect = None
 
-        # HUD
         self.room_text = f"Комната: {self.room_number}"
 
-        # Кнопки
         self.cooldown = 0
         self.last_shield_time = 0
         self.shield_active = False
-        self.shield_button = (SCREEN_WIDTH / 2 - 90, MAZE_HEIGHT + HUD_HEIGHT / 2 - 20, 180, 40)
-        self.menu_button = (SCREEN_WIDTH - 190, MAZE_HEIGHT + HUD_HEIGHT / 2 - 20, 180, 40)
+        self.shield_button = (
+            SCREEN_WIDTH / 2 - 90,
+            MAZE_HEIGHT + HUD_HEIGHT / 2 - 20,
+            180,
+            40,
+        )
+        self.menu_button = (
+            SCREEN_WIDTH - 190,
+            MAZE_HEIGHT + HUD_HEIGHT / 2 - 20,
+            180,
+            40,
+        )
 
-        # Пуля
         self.bullet = None
         self.bullet_active = False
 
-        # Линия при наведении
         self.aim_line = None
 
-        # Координаты мыши
         self._mouse_x = 0
         self._mouse_y = 0
 
         self.generate_maze()
 
-    # ---------------- ГЕНЕРАЦИЯ ЛАБИРИНТА ----------------
     def generate_maze(self):
         self.vertical_walls.clear()
         self.horizontal_walls.clear()
@@ -138,37 +136,82 @@ class GameWindow(arcade.Window):
         for r in range(ROWS):
             for c in range(COLS + 1):
                 if v_walls[r][c]:
-                    self.vertical_walls.append(center_to_lbwh(c * CELL + WALL / 2, r * CELL + CELL / 2, WALL, CELL))
+                    self.vertical_walls.append(
+                        center_to_lbwh(
+                            c * CELL + WALL / 2, r * CELL + CELL / 2, WALL, CELL
+                        )
+                    )
         for r in range(ROWS + 1):
             for c in range(COLS):
                 if h_walls[r][c]:
-                    self.horizontal_walls.append(center_to_lbwh(c * CELL + CELL / 2, r * CELL + WALL / 2, CELL, WALL))
+                    self.horizontal_walls.append(
+                        center_to_lbwh(
+                            c * CELL + CELL / 2, r * CELL + WALL / 2, CELL, WALL
+                        )
+                    )
 
-        self.start_rect = center_to_lbwh(WALL + PASSAGE / 2, WALL + PASSAGE / 2, START_SIZE, START_SIZE)
-        self.end_rect = center_to_lbwh(MAZE_WIDTH - WALL - PASSAGE / 2, MAZE_HEIGHT - WALL - PASSAGE / 2, END_SIZE,
-                                       END_SIZE)
+        self.start_rect = center_to_lbwh(
+            WALL + PASSAGE / 2, WALL + PASSAGE / 2, START_SIZE, START_SIZE
+        )
+        self.end_rect = center_to_lbwh(
+            MAZE_WIDTH - WALL - PASSAGE / 2,
+            MAZE_HEIGHT - WALL - PASSAGE / 2,
+            END_SIZE,
+            END_SIZE,
+        )
 
         self.room_text = f"Комната: {self.room_number}"
         self.bullet_active = False
         self.bullet = None
+        self.aim_line = None
+        self.shield_active = False
 
-    # ---------------- ОТРИСОВКА ----------------
     def on_draw(self):
         self.clear()
 
         if self.show_start_screen:
-            arcade.draw_text("bullet-in-the-mosaic", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 40,
-                             TITLE_COLOR, 36, anchor_x="center", anchor_y="center")
-            arcade.draw_text("нажмите любую клавишу или кнопку мыши, чтобы начать играть",
-                             SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 20, SUBTITLE_COLOR, 14,
-                             anchor_x="center", anchor_y="center")
+            arcade.draw_text(
+                "bullet in the mosaic",
+                SCREEN_WIDTH / 2,
+                SCREEN_HEIGHT / 2 + 40,
+                TITLE_COLOR,
+                36,
+                anchor_x="center",
+                anchor_y="center",
+            )
+            arcade.draw_text(
+                "нажмите любую клавишу или кнопку мыши, чтобы начать играть",
+                SCREEN_WIDTH / 2,
+                SCREEN_HEIGHT / 2 - 20,
+                SUBTITLE_COLOR,
+                14,
+                anchor_x="center",
+                anchor_y="center",
+            )
             return
 
-        _draw_rectangle_filled_center(SCREEN_WIDTH / 2, MAZE_HEIGHT + HUD_HEIGHT / 2, SCREEN_WIDTH, HUD_HEIGHT, HUD_COLOR)
-        arcade.draw_text(self.room_text, 10, MAZE_HEIGHT + HUD_HEIGHT / 2, arcade.color.BLACK, 18, anchor_y="center")
+        _draw_rectangle_filled_center(
+            SCREEN_WIDTH / 2,
+            MAZE_HEIGHT + HUD_HEIGHT / 2,
+            SCREEN_WIDTH,
+            HUD_HEIGHT,
+            HUD_COLOR,
+        )
+        arcade.draw_text(
+            self.room_text,
+            10,
+            MAZE_HEIGHT + HUD_HEIGHT / 2,
+            arcade.color.BLACK,
+            18,
+            anchor_y="center",
+        )
 
-        self.draw_button(self.shield_button,
-                         f"Остановить пулю (КД: {self.get_cooldown()})" if self.cooldown > 0 else "Остановить пулю")
+        self.draw_button(
+            self.shield_button,
+            f"Остановить пулю (КД: {self.get_cooldown()})"
+            if self.cooldown > 0
+            else "Остановить пулю",
+        )
         self.draw_button(self.menu_button, "Главное меню")
 
         for x, y, w, h in self.vertical_walls + self.horizontal_walls:
@@ -191,7 +234,15 @@ class GameWindow(arcade.Window):
         if x < self._mouse_x < x + w and y < self._mouse_y < y + h:
             color = BUTTON_HOVER_COLOR
         _draw_rectangle_filled_center(x + w / 2, y + h / 2, w, h, color)
-        arcade.draw_text(text, x + w / 2, y + h / 2, BUTTON_TEXT_COLOR, 14, anchor_x="center", anchor_y="center")
+        arcade.draw_text(
+            text,
+            x + w / 2,
+            y + h / 2,
+            BUTTON_TEXT_COLOR,
+            14,
+            anchor_x="center",
+            anchor_y="center",
+        )
 
     def get_cooldown(self):
         if self.cooldown == 0:
@@ -204,103 +255,219 @@ class GameWindow(arcade.Window):
             self.shield_active = False
         return remaining
 
-    # ---------------- ЛОГИКА ПУЛИ ----------------
     def on_update(self, delta_time):
         sx, sy, sw, sh = self.start_rect
         start_x = sx + sw / 2
         start_y = sy + sh / 2
         mx, my = self._mouse_x, self._mouse_y
 
-        # направление линии
-        dx = mx - start_x
-        dy = my - start_y
-        length = math.hypot(dx, dy)
-        if length == 0:
-            length = 1
-        dx /= length
-        dy /= length
+        raw_dx = mx - start_x
+        raw_dy = my - start_y
+        raw_dist = math.hypot(raw_dx, raw_dy)
+        if raw_dist == 0:
+            unit_dx, unit_dy = 1.0, 0.0
+        else:
+            unit_dx, unit_dy = raw_dx / raw_dist, raw_dy / raw_dist
 
-        max_distance = 5000  # линия до "бесконечности"
-        end_x = start_x + dx * max_distance
-        end_y = start_y + dy * max_distance
+        max_distance = 5000.0
+        closest_t = max_distance
+        hit_x = start_x + unit_dx * max_distance
+        hit_y = start_y + unit_dy * max_distance
 
-        # находим ближайшее пересечение с любой стеной
-        for wx, wy, ww, wh in self.vertical_walls + self.horizontal_walls:
+        walls = self.vertical_walls + self.horizontal_walls
+        for wx, wy, ww, wh in walls:
             wall_left = wx
             wall_right = wx + ww
             wall_bottom = wy
             wall_top = wy + wh
 
-            # проверяем пересечение с вертикальными стенами
-            if dx != 0:
-                t1 = (wall_left - start_x) / dx
-                t2 = (wall_right - start_x) / dx
-                for t in [t1, t2]:
-                    if t > 0:
-                        y_hit = start_y + dy * t
-                        if wall_bottom <= y_hit <= wall_top:
-                            if t * length < math.hypot(end_x - start_x, end_y - start_y):
-                                end_x = start_x + dx * t
-                                end_y = y_hit
+            if abs(unit_dx) > 1e-9:
+                for x_side in (wall_left, wall_right):
+                    t = (x_side - start_x) / unit_dx
+                    if t > 0 and t < closest_t:
+                        y_hit = start_y + unit_dy * t
+                        if wall_bottom - 1e-6 <= y_hit <= wall_top + 1e-6:
+                            closest_t = t
+                            hit_x = x_side
+                            hit_y = y_hit
 
-            # проверяем пересечение с горизонтальными стенами
-            if dy != 0:
-                t1 = (wall_bottom - start_y) / dy
-                t2 = (wall_top - start_y) / dy
-                for t in [t1, t2]:
-                    if t > 0:
-                        x_hit = start_x + dx * t
-                        if wall_left <= x_hit <= wall_right:
-                            if t * length < math.hypot(end_x - start_x, end_y - start_y):
-                                end_x = x_hit
-                                end_y = start_y + dy * t
+            if abs(unit_dy) > 1e-9:
+                for y_side in (wall_bottom, wall_top):
+                    t = (y_side - start_y) / unit_dy
+                    if t > 0 and t < closest_t:
+                        x_hit = start_x + unit_dx * t
+                        if wall_left - 1e-6 <= x_hit <= wall_right + 1e-6:
+                            closest_t = t
+                            hit_x = x_hit
+                            hit_y = y_side
 
-        self.aim_line = (start_x, start_y, end_x, end_y)
+        self.aim_line = (start_x, start_y, hit_x, hit_y)
 
-        # ---------------- движение пули ----------------
         if self.bullet_active and self.bullet:
-            next_x = self.bullet.x + self.bullet.dx
-            next_y = self.bullet.y + self.bullet.dy
+            b = self.bullet
+            new_x = b.x
+            new_y = b.y
 
-            collided = False
-            for wx, wy, ww, wh in self.vertical_walls + self.horizontal_walls:
+            tentative_x = b.x + b.dx
+            tentative_y = b.y + b.dy
+
+            radius = b.radius
+
+            nearest_x_collision = None
+            nearest_x_dist = float("inf")
+            if b.dx > 0:
+                for wx, wy, ww, wh in walls:
+                    wall_left = wx
+                    wall_right = wx + ww
+                    wall_bottom = wy
+                    wall_top = wy + wh
+                    if new_y + radius > wall_bottom and new_y - radius < wall_top:
+                        collision_x = wall_left - radius
+                        if new_x < collision_x <= tentative_x:
+                            dist = collision_x - new_x
+                            if dist < nearest_x_dist:
+                                nearest_x_dist = dist
+                                nearest_x_collision = (
+                                    collision_x,
+                                    wall_left,
+                                    wall_right,
+                                    wall_bottom,
+                                    wall_top,
+                                )
+            elif b.dx < 0:
+                for wx, wy, ww, wh in walls:
+                    wall_left = wx
+                    wall_right = wx + ww
+                    wall_bottom = wy
+                    wall_top = wy + wh
+                    if new_y + radius > wall_bottom and new_y - radius < wall_top:
+                        collision_x = wall_right + radius
+                        if tentative_x <= collision_x < new_x:
+                            dist = new_x - collision_x
+                            if dist < nearest_x_dist:
+                                nearest_x_dist = dist
+                                nearest_x_collision = (
+                                    collision_x,
+                                    wall_left,
+                                    wall_right,
+                                    wall_bottom,
+                                    wall_top,
+                                )
+
+            if nearest_x_collision:
+                (
+                    col_x,
+                    wall_left,
+                    wall_right,
+                    wall_bottom,
+                    wall_top,
+                ) = nearest_x_collision
+                new_x = col_x
+                b.dx *= -1
+            else:
+                new_x = tentative_x
+
+            nearest_y_collision = None
+            nearest_y_dist = float("inf")
+            if b.dy > 0:
+                for wx, wy, ww, wh in walls:
+                    wall_left = wx
+                    wall_right = wx + ww
+                    wall_bottom = wy
+                    wall_top = wy + wh
+                    if new_x + radius > wall_left and new_x - radius < wall_right:
+                        collision_y = wall_bottom - radius
+                        if new_y < collision_y <= tentative_y:
+                            dist = collision_y - new_y
+                            if dist < nearest_y_dist:
+                                nearest_y_dist = dist
+                                nearest_y_collision = (
+                                    collision_y,
+                                    wall_left,
+                                    wall_right,
+                                    wall_bottom,
+                                    wall_top,
+                                )
+            elif b.dy < 0:
+                for wx, wy, ww, wh in walls:
+                    wall_left = wx
+                    wall_right = wx + ww
+                    wall_bottom = wy
+                    wall_top = wy + wh
+                    if new_x + radius > wall_left and new_x - radius < wall_right:
+                        collision_y = wall_top + radius
+                        if tentative_y <= collision_y < new_y:
+                            dist = new_y - collision_y
+                            if dist < nearest_y_dist:
+                                nearest_y_dist = dist
+                                nearest_y_collision = (
+                                    collision_y,
+                                    wall_left,
+                                    wall_right,
+                                    wall_bottom,
+                                    wall_top,
+                                )
+
+            if nearest_y_collision:
+                (
+                    col_y,
+                    wall_left,
+                    wall_right,
+                    wall_bottom,
+                    wall_top,
+                ) = nearest_y_collision
+                new_y = col_y
+                b.dy *= -1
+            else:
+                new_y = tentative_y
+
+            pushed_out = False
+            for wx, wy, ww, wh in walls:
                 wall_left = wx
                 wall_right = wx + ww
                 wall_bottom = wy
                 wall_top = wy + wh
-
-                if wall_left - self.bullet.radius <= next_x <= wall_right + self.bullet.radius and \
-                        wall_bottom - self.bullet.radius <= next_y <= wall_top + self.bullet.radius:
-                    collided = True
-                    dist_left = abs(next_x - wall_left)
-                    dist_right = abs(next_x - wall_right)
-                    dist_bottom = abs(next_y - wall_bottom)
-                    dist_top = abs(next_y - wall_top)
-                    min_dist = min(dist_left, dist_right, dist_bottom, dist_top)
-
-                    if min_dist == dist_left or min_dist == dist_right:
-                        self.bullet.dx *= -1
-                        next_x = self.bullet.x
+                if (
+                    new_x + radius > wall_left
+                    and new_x - radius < wall_right
+                    and new_y + radius > wall_bottom
+                    and new_y - radius < wall_top
+                ):
+                    overlap_left = abs((new_x + radius) - wall_left)
+                    overlap_right = abs(wall_right - (new_x - radius))
+                    overlap_bottom = abs((new_y + radius) - wall_bottom)
+                    overlap_top = abs(wall_top - (new_y - radius))
+                    min_overlap = min(
+                        overlap_left, overlap_right, overlap_bottom, overlap_top
+                    )
+                    if min_overlap == overlap_left:
+                        new_x = wall_left - radius
+                        b.dx = -abs(b.dx)
+                    elif min_overlap == overlap_right:
+                        new_x = wall_right + radius
+                        b.dx = abs(b.dx)
+                    elif min_overlap == overlap_bottom:
+                        new_y = wall_bottom - radius
+                        b.dy = -abs(b.dy)
                     else:
-                        self.bullet.dy *= -1
-                        next_y = self.bullet.y
+                        new_y = wall_top + radius
+                        b.dy = abs(b.dy)
+                    pushed_out = True
 
-            if not collided:
-                self.bullet.x = next_x
-                self.bullet.y = next_y
+            if not pushed_out:
+                b.x = new_x
+                b.y = new_y
             else:
-                self.bullet.x = next_x
-                self.bullet.y = next_y
+                b.x = new_x
+                b.y = new_y
 
-            # Попадание в красный куб
             ex, ey, ew, eh = self.end_rect
-            if ex <= self.bullet.x <= ex + ew and ey <= self.bullet.y <= ey + eh:
+            if ex <= b.x <= ex + ew and ey <= b.y <= ey + eh:
                 self.room_number += 1
                 self.generate_maze()
                 self.bullet_active = False
                 self.bullet = None
 
-    # ---------------- ВВОД ----------------
     def on_key_press(self, key, modifiers):
         if self.show_start_screen:
             self.show_start_screen = False
