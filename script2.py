@@ -72,6 +72,16 @@ class GameWindow(arcade.Window):
         self.show_start_screen = True
         self.room_number = 1
 
+        # --- TIMER ---
+        self.level_start_time = time.time()
+        self.level_time = 0
+        self.timer_window = (
+            SCREEN_WIDTH / 2 - 80,
+            MAZE_HEIGHT + HUD_HEIGHT / 2 - 20,
+            160,
+            40,
+        )
+
         self.vertical_walls = []
         self.horizontal_walls = []
 
@@ -105,6 +115,7 @@ class GameWindow(arcade.Window):
         self._mouse_y = 0
 
         self.generate_maze()
+
 
     def generate_maze(self):
         self.vertical_walls.clear()
@@ -141,6 +152,7 @@ class GameWindow(arcade.Window):
                             c * CELL + WALL / 2, r * CELL + CELL / 2, WALL, CELL
                         )
                     )
+
         for r in range(ROWS + 1):
             for c in range(COLS):
                 if h_walls[r][c]:
@@ -166,6 +178,11 @@ class GameWindow(arcade.Window):
         self.aim_line = None
         self.shield_active = False
 
+        # --- RESET TIMER ---
+        self.level_start_time = time.time()
+        self.level_time = 0
+
+
     def on_draw(self):
         self.clear()
 
@@ -190,6 +207,7 @@ class GameWindow(arcade.Window):
             )
             return
 
+        # --- HUD ---
         _draw_rectangle_filled_center(
             SCREEN_WIDTH / 2,
             MAZE_HEIGHT + HUD_HEIGHT / 2,
@@ -197,36 +215,59 @@ class GameWindow(arcade.Window):
             HUD_HEIGHT,
             HUD_COLOR,
         )
+
+        # --- Номер комнаты (слева) ---
         arcade.draw_text(
             self.room_text,
             10,
             MAZE_HEIGHT + HUD_HEIGHT / 2,
             arcade.color.BLACK,
-            18,
+            16,
             anchor_y="center",
         )
 
-        self.draw_button(
-            self.shield_button,
-            f"Остановить пулю (КД: {self.get_cooldown()})"
-            if self.cooldown > 0
-            else "Остановить пулю",
+        # --- Таймер (справа от номера комнаты, левее кнопок) ---
+        timer_text = f"{self.level_time:.1f} сек"
+        timer_x = SCREEN_WIDTH / 2 - 120  # сдвиг влево, чтобы не перекрывать кнопки
+        arcade.draw_text(
+            timer_text,
+            timer_x,
+            MAZE_HEIGHT + HUD_HEIGHT / 2,
+            arcade.color.BLACK,
+            16,
+            anchor_x="center",
+            anchor_y="center",
         )
-        self.draw_button(self.menu_button, "Главное меню")
 
+        # --- Кнопки (справа) ---
+        # Уменьшаем кнопки и размещаем их рядом
+        shield_button_rect = (SCREEN_WIDTH - 370, MAZE_HEIGHT + HUD_HEIGHT / 2 - 15, 160, 30)
+        menu_button_rect = (SCREEN_WIDTH - 200, MAZE_HEIGHT + HUD_HEIGHT / 2 - 15, 160, 30)
+
+        self.draw_button(
+            shield_button_rect,
+            f"Остановить пулю (КД: {self.get_cooldown()})" if self.cooldown > 0 else "Остановить пулю"
+        )
+        self.draw_button(menu_button_rect, "Главное меню")
+
+        # --- Стены ---
         for x, y, w, h in self.vertical_walls + self.horizontal_walls:
             _draw_rectangle_filled_center(x + w / 2, y + h / 2, w, h, WALL_COLOR)
 
+        # --- Старт и финиш ---
         sx, sy, sw, sh = self.start_rect
         _draw_rectangle_filled_center(sx + sw / 2, sy + sh / 2, sw, sh, START_COLOR)
         ex, ey, ew, eh = self.end_rect
         _draw_rectangle_filled_center(ex + ew / 2, ey + eh / 2, ew, eh, END_COLOR)
 
+        # --- Прицел ---
         if self.aim_line:
             arcade.draw_line(*self.aim_line, arcade.color.RED, 4)
 
+        # --- Пуля ---
         if self.bullet_active and self.bullet:
             self.bullet.draw()
+
 
     def draw_button(self, rect, text):
         x, y, w, h = rect
@@ -256,6 +297,9 @@ class GameWindow(arcade.Window):
         return remaining
 
     def on_update(self, delta_time):
+         # --- UPDATE TIMER ---
+        self.level_time = time.time() - self.level_start_time
+
         sx, sy, sw, sh = self.start_rect
         start_x = sx + sw / 2
         start_y = sy + sh / 2
