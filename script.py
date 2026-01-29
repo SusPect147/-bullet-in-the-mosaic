@@ -70,6 +70,20 @@ class GameWindow(arcade.Window):
         arcade.set_background_color(BACKGROUND_COLOR)
 
         self.show_start_screen = True
+                # --- Кнопки стартового экрана ---
+        self.start_continue_button = (
+            SCREEN_WIDTH / 2 - 140,
+            SCREEN_HEIGHT / 2 - 20,
+            280,
+            40,
+        )
+        self.start_new_button = (
+            SCREEN_WIDTH / 2 - 140,
+            SCREEN_HEIGHT / 2 - 80,
+            280,
+            40,
+        )
+
         self.room_number = 1
 
         # --- TIMER ---
@@ -186,28 +200,22 @@ class GameWindow(arcade.Window):
     def on_draw(self):
         self.clear()
 
+        # ================= START SCREEN =================
         if self.show_start_screen:
             arcade.draw_text(
                 "bullet in the mosaic",
                 SCREEN_WIDTH / 2,
-                SCREEN_HEIGHT / 2 + 40,
+                SCREEN_HEIGHT / 2 + 120,
                 TITLE_COLOR,
                 36,
                 anchor_x="center",
-                anchor_y="center",
             )
-            arcade.draw_text(
-                "нажмите любую клавишу или кнопку мыши, чтобы начать играть",
-                SCREEN_WIDTH / 2,
-                SCREEN_HEIGHT / 2 - 20,
-                SUBTITLE_COLOR,
-                14,
-                anchor_x="center",
-                anchor_y="center",
-            )
+
+            self.draw_button(self.start_continue_button, "Продолжить прохождение")
+            self.draw_button(self.start_new_button, "Начать заново")
             return
 
-        # --- HUD ---
+        # ================= HUD =================
         _draw_rectangle_filled_center(
             SCREEN_WIDTH / 2,
             MAZE_HEIGHT + HUD_HEIGHT / 2,
@@ -216,57 +224,49 @@ class GameWindow(arcade.Window):
             HUD_COLOR,
         )
 
-        # --- Номер комнаты (слева) ---
+        hud_y = MAZE_HEIGHT + HUD_HEIGHT / 2
+
+        # --- Номер комнаты ---
         arcade.draw_text(
             self.room_text,
             10,
-            MAZE_HEIGHT + HUD_HEIGHT / 2,
+            hud_y,
             arcade.color.BLACK,
             16,
             anchor_y="center",
         )
 
-        # --- Таймер (справа от номера комнаты, левее кнопок) ---
-        timer_text = f"{self.level_time:.1f} сек"
-        timer_x = SCREEN_WIDTH / 2 - 120  # сдвиг влево, чтобы не перекрывать кнопки
+        # --- Таймер (сдвинут левее кнопок) ---
         arcade.draw_text(
-            timer_text,
-            timer_x,
-            MAZE_HEIGHT + HUD_HEIGHT / 2,
+            f"{self.level_time:.1f} сек",
+            SCREEN_WIDTH - 490,
+            hud_y,
             arcade.color.BLACK,
             16,
-            anchor_x="center",
             anchor_y="center",
         )
 
-        # --- Кнопки (справа) ---
-        # Уменьшаем кнопки и размещаем их рядом
-        shield_button_rect = (SCREEN_WIDTH - 370, MAZE_HEIGHT + HUD_HEIGHT / 2 - 15, 160, 30)
-        menu_button_rect = (SCREEN_WIDTH - 200, MAZE_HEIGHT + HUD_HEIGHT / 2 - 15, 160, 30)
+        # --- Кнопки HUD ---
+        self.draw_button(self.shield_button, "Остановить пулю")
+        self.draw_button(self.menu_button, "Главное меню")
 
-        self.draw_button(
-            shield_button_rect,
-            f"Остановить пулю (КД: {self.get_cooldown()})" if self.cooldown > 0 else "Остановить пулю"
-        )
-        self.draw_button(menu_button_rect, "Главное меню")
-
-        # --- Стены ---
+        # ================= MAZE =================
         for x, y, w, h in self.vertical_walls + self.horizontal_walls:
             _draw_rectangle_filled_center(x + w / 2, y + h / 2, w, h, WALL_COLOR)
 
-        # --- Старт и финиш ---
         sx, sy, sw, sh = self.start_rect
         _draw_rectangle_filled_center(sx + sw / 2, sy + sh / 2, sw, sh, START_COLOR)
+
         ex, ey, ew, eh = self.end_rect
         _draw_rectangle_filled_center(ex + ew / 2, ey + eh / 2, ew, eh, END_COLOR)
 
-        # --- Прицел ---
         if self.aim_line:
             arcade.draw_line(*self.aim_line, arcade.color.RED, 4)
 
-        # --- Пуля ---
         if self.bullet_active and self.bullet:
             self.bullet.draw()
+
+
 
 
     def draw_button(self, rect, text):
