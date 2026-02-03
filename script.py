@@ -2,6 +2,9 @@ import arcade
 import random
 import time
 import math
+import json
+import os
+
 
 WALL = 10
 PASSAGE = 40
@@ -35,6 +38,8 @@ BUTTON_HOVER_COLOR = arcade.color.GRAY
 BUTTON_TEXT_COLOR = arcade.color.BLACK
 
 COOLDOWN_MAX = 7
+SAVE_FILE = "save.json"
+
 
 
 def center_to_lbwh(cx, cy, w, h):
@@ -71,32 +76,27 @@ class GameWindow(arcade.Window):
         self.paused = False
         self.pause_start_time = time.time()
 
-        self.bounce_sound = arcade.load_sound("assets/song2.mp3")
+        try:
+            self.bounce_sound = arcade.load_sound("assets/song2.mp3")
+        except:
+            self.bounce_sound = None
         super().__init__(SCREEN_WIDTH, SCREEN_HEIGHT, WINDOW_TITLE)
         arcade.set_background_color(BACKGROUND_COLOR)
 
-        
+        # Стартовый экран
         self.show_start_screen = True
         self.room_number = 1
 
-        
         self.level_start_time = time.time()
         self.level_time = 0
 
-        
         self.hud_y = MAZE_HEIGHT + HUD_HEIGHT // 2
-
         self.room_text_pos = (20, self.hud_y)
-
-        
         self.timer_pos = (200, self.hud_y)
 
-        
         self.shield_button = (250, self.hud_y - 15, 130, 30)
         self.menu_button = (400, self.hud_y - 15, 150, 30)
 
-
-        
         self.start_continue_button = (
             SCREEN_WIDTH // 2 - 150,
             SCREEN_HEIGHT // 2 + 10,
@@ -110,7 +110,6 @@ class GameWindow(arcade.Window):
             45,
         )
 
-        
         self.vertical_walls = []
         self.horizontal_walls = []
 
@@ -121,22 +120,98 @@ class GameWindow(arcade.Window):
         self.bullet_active = False
         self.aim_line = None
 
-        
         self.cooldown = 0
         self.last_shield_time = 0
         self.shield_active = False
 
-        
         self._mouse_x = 0
         self._mouse_y = 0
 
-        self.generate_maze()
+        # Пытаемся загрузить прогресс
+        loaded = self.load_progress()
 
-    
+        if not loaded:
+            # Прогресса нет — создаем новый лабиринт
+            self.room_number = 1
+            self.level_time = 0
+            self.generate_maze()
+        else:
+            # Прогресс загружен — пересчитываем таймер с момента сохранения
+            self.level_start_time = time.time() - self.level_time
+
+
+    def save_progress(self):
+        data = {
+            "room_number": self.room_number,
+            "level_start_time": self.level_start_time,
+            "vertical_walls": self.vertical_walls,
+            "horizontal_walls": self.horizontal_walls,
+            "start_rect": self.start_rect,
+            "end_rect": self.end_rect,
+            "bullet_active": self.bullet_active,
+            "bullet": {
+                "x": self.bullet.x,
+                "y": self.bullet.y,
+                "dx": self.bullet.dx,
+                "dy": self.bullet.dy,
+                "radius": self.bullet.radius,
+            } if self.bullet else None,
+            "cooldown": self.cooldown,
+            "last_shield_time": self.last_shield_time,
+            "shield_active": self.shield_active,
+        }
+
+        try:
+            with open(SAVE_FILE, "w") as f:
+                json.dump(data, f)
+        except Exception as e:
+            print("Ошибка сохранения:", e)
+
+
+    def load_progress(self):
+        if not os.path.exists(SAVE_FILE):
+            return False
+
+        try:
+            with open(SAVE_FILE, "r") as f:
+                data = json.load(f)
+
+            self.room_number = data.get("room_number", 1)
+            self.level_time = data.get("level_time", 0)  # сохраняем пройденное время
+            self.vertical_walls = data.get("vertical_walls", [])
+            self.horizontal_walls = data.get("horizontal_walls", [])
+            self.start_rect = data.get("start_rect", None)
+            self.end_rect = data.get("end_rect", None)
+
+            self.bullet_active = data.get("bullet_active", False)
+            bullet_data = data.get("bullet", None)
+            if bullet_data:
+                self.bullet = Bullet(
+                    bullet_data["x"],
+                    bullet_data["y"],
+                    bullet_data["dx"],
+                    bullet_data["dy"],
+                    bullet_data.get("radius", 5),
+                )
+            else:
+                self.bullet = None
+
+            self.cooldown = data.get("cooldown", 0)
+            self.last_shield_time = data.get("last_shield_time", 0)
+            self.shield_active = data.get("shield_active", False)
+
+            return True
+
+        except Exception as e:
+            print("Ошибка загрузки:", e)
+            return False
+
 
     def generate_maze(self):
         self.vertical_walls.clear()
         self.horizontal_walls.clear()
+        self.level_start_time = time.time()
+
 
         v_walls = [[True for _ in range(COLS + 1)] for _ in range(ROWS)]
         h_walls = [[True for _ in range(COLS)] for _ in range(ROWS + 1)]
@@ -196,8 +271,7 @@ class GameWindow(arcade.Window):
         self.shield_active = False
 
         
-        self.level_start_time = time.time()
-        self.level_time = 0
+        
 
 
     def on_draw(self):
@@ -295,6 +369,9 @@ class GameWindow(arcade.Window):
         )
 
     def play_bounce(self):
+        if not self.bounce_sound:
+            return
+
         speed = math.hypot(self.bullet.dx, self.bullet.dy)
         volume = min(0.2 + speed / 50, 0.6)
         arcade.play_sound(self.bounce_sound, volume=volume)
@@ -531,7 +608,10 @@ class GameWindow(arcade.Window):
             ex, ey, ew, eh = self.end_rect
             if ex <= b.x <= ex + ew and ey <= b.y <= ey + eh:
                 self.room_number += 1
+                self.save_progress()      # Сохраняем ДО сброса таймера
+                self.level_time = 0
                 self.generate_maze()
+
                 self.bullet_active = False
                 self.bullet = None
 
@@ -561,8 +641,13 @@ class GameWindow(arcade.Window):
                 self.paused = False
 
             elif self.point_in_rect(x, y, self.start_new_button):
+                if os.path.exists(SAVE_FILE):
+                    os.remove(SAVE_FILE)
+
                 self.room_number = 1
+                self.level_start_time = time.time()
                 self.generate_maze()
+
                 self.show_start_screen = False
                 pause_duration = time.time() - self.pause_start_time
                 self.level_start_time += pause_duration
@@ -583,6 +668,7 @@ class GameWindow(arcade.Window):
             self.shield_active = True
 
         elif self.point_in_rect(x, y, self.menu_button):
+            self.save_progress()
             self.show_start_screen = True
             self.paused = True
             self.pause_start_time = time.time()
@@ -612,6 +698,11 @@ class GameWindow(arcade.Window):
     def point_in_rect(px, py, rect):
         x, y, w, h = rect
         return x <= px <= x + w and y <= py <= y + h
+    
+    def on_close(self):
+        self.save_progress()
+        super().on_close()
+
 
 
 def main():
