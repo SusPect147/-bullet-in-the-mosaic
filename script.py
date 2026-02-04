@@ -2,12 +2,17 @@ import arcade
 import random
 import time
 import math
+import json
+import os
+
 
 WALL = 10
 PASSAGE = 40
 CELL = WALL + PASSAGE
 COLS = 12
 ROWS = 12
+
+WALL_OVERLAP = 1.5
 
 MAZE_WIDTH = COLS * CELL + WALL
 MAZE_HEIGHT = ROWS * CELL + WALL
@@ -32,7 +37,88 @@ BUTTON_COLOR = arcade.color.LIGHT_GRAY
 BUTTON_HOVER_COLOR = arcade.color.GRAY
 BUTTON_TEXT_COLOR = arcade.color.BLACK
 
+BUTTON_RADIUS = 10
+SHADOW_OFFSET = 4
+SHADOW_COLOR = (0, 0, 0, 120)  # полупрозрачная тень
 COOLDOWN_MAX = 7
+SAVE_FILE = "save.json"
+
+# --- UI функции ---
+BUTTON_RADIUS = 10
+SHADOW_OFFSET = 4
+
+def draw_rounded_button(x, y, w, h, color, shadow=True):
+    """
+    Рисует кнопку с тенью и скруглением.
+    x, y - левый нижний угол
+    w, h - ширина и высота
+    color - цвет кнопки
+    shadow - включить тень
+    """
+    SHADOW_OFFSET = 4
+    # Тень
+    if shadow:
+        arcade.draw_lrbt_rectangle_filled(
+            left=x + SHADOW_OFFSET,
+            right=x + w + SHADOW_OFFSET,
+            bottom=y - SHADOW_OFFSET,
+            top=y + h - SHADOW_OFFSET,
+            color=(0, 0, 0, 100)
+        )
+
+    # Кнопка
+    arcade.draw_lrbt_rectangle_filled(
+        left=x,
+        right=x + w,
+        bottom=y,
+        top=y + h,
+        color=color
+    )
+
+    # Обводка
+    arcade.draw_lrbt_rectangle_outline(
+        left=x,
+        right=x + w,
+        bottom=y,
+        top=y + h,
+        color=arcade.color.BLACK,
+        border_width=2
+    )
+
+
+def draw_button_with_text(x, y, w, h, text, mouse_x, mouse_y):
+    """
+    Рисует кнопку с hover-эффектом и текстом.
+    """
+    hovered = x <= mouse_x <= x + w and y <= mouse_y <= y + h
+    color = arcade.color.GRAY if hovered else arcade.color.LIGHT_GRAY
+    draw_rounded_button(x, y, w, h, color, shadow=True)
+
+    arcade.draw_text(
+        text,
+        x + w / 2,
+        y + h / 2,
+        arcade.color.BLACK,
+        14,
+        anchor_x="center",
+        anchor_y="center",
+        bold=True
+    )
+
+
+
+def _draw_rectangle_filled_center(cx, cy, w, h, color):
+    hw = w / 2
+    hh = h / 2
+    points = [
+        (cx - hw, cy - hh),
+        (cx + hw, cy - hh),
+        (cx + hw, cy + hh),
+        (cx - hw, cy + hh),
+    ]
+    arcade.draw_polygon_filled(points, color)
+
+
 
 
 def center_to_lbwh(cx, cy, w, h):
@@ -51,6 +137,7 @@ def _draw_rectangle_filled_center(cx, cy, w, h, color):
     arcade.draw_polygon_filled(points, color)
 
 
+
 class Bullet:
     def __init__(self, x, y, dx, dy, radius=5, color=arcade.color.WHITE):
         self.x = x
@@ -66,11 +153,42 @@ class Bullet:
 
 class GameWindow(arcade.Window):
     def __init__(self):
+        self.paused = False
+        self.pause_start_time = time.time()
+
+        try:
+            self.bounce_sound = arcade.load_sound("assets/song2.mp3")
+        except:
+            self.bounce_sound = None
         super().__init__(SCREEN_WIDTH, SCREEN_HEIGHT, WINDOW_TITLE)
         arcade.set_background_color(BACKGROUND_COLOR)
 
+        # Стартовый экран
         self.show_start_screen = True
         self.room_number = 1
+
+        self.level_start_time = time.time()
+        self.level_time = 0
+
+        self.hud_y = MAZE_HEIGHT + HUD_HEIGHT // 2
+        self.room_text_pos = (20, self.hud_y)
+        self.timer_pos = (200, self.hud_y)
+
+        self.shield_button = (250, self.hud_y - 15, 130, 30)
+        self.menu_button = (400, self.hud_y - 15, 150, 30)
+
+        self.start_continue_button = (
+            SCREEN_WIDTH // 2 - 150,
+            SCREEN_HEIGHT // 2 + 10,
+            300,
+            45,
+        )
+        self.start_new_button = (
+            SCREEN_WIDTH // 2 - 150,
+            SCREEN_HEIGHT // 2 - 55,
+            300,
+            45,
+        )
 
         self.vertical_walls = []
         self.horizontal_walls = []
@@ -78,37 +196,105 @@ class GameWindow(arcade.Window):
         self.start_rect = None
         self.end_rect = None
 
-        self.room_text = f"Комната: {self.room_number}"
+        self.bullet = None
+        self.bullet_active = False
+        self.aim_line = None
 
         self.cooldown = 0
         self.last_shield_time = 0
         self.shield_active = False
-        self.shield_button = (
-            SCREEN_WIDTH / 2 - 90,
-            MAZE_HEIGHT + HUD_HEIGHT / 2 - 20,
-            180,
-            40,
-        )
-        self.menu_button = (
-            SCREEN_WIDTH - 190,
-            MAZE_HEIGHT + HUD_HEIGHT / 2 - 20,
-            180,
-            40,
-        )
-
-        self.bullet = None
-        self.bullet_active = False
-
-        self.aim_line = None
 
         self._mouse_x = 0
         self._mouse_y = 0
 
-        self.generate_maze()
+        # Пытаемся загрузить прогресс
+        loaded = self.load_progress()
+
+        if not loaded:
+            # Прогресса нет — создаем новый лабиринт
+            self.room_number = 1
+            self.level_time = 0
+            self.generate_maze()
+        else:
+            # Прогресс загружен — пересчитываем таймер с момента сохранения
+            self.level_start_time = time.time() - self.level_time
+
+
+    def save_progress(self):
+        data = {
+            "room_number": self.room_number,
+            "level_time": self.level_time,  # сохраняем пройденное время
+            "vertical_walls": self.vertical_walls,
+            "horizontal_walls": self.horizontal_walls,
+            "start_rect": self.start_rect,
+            "end_rect": self.end_rect,
+            "bullet_active": self.bullet_active,
+            "bullet": {
+                "x": self.bullet.x,
+                "y": self.bullet.y,
+                "dx": self.bullet.dx,
+                "dy": self.bullet.dy,
+                "radius": self.bullet.radius,
+            } if self.bullet else None,
+            "cooldown": self.cooldown,
+            "last_shield_time": self.last_shield_time,
+            "shield_active": self.shield_active,
+        }
+
+        try:
+            with open(SAVE_FILE, "w") as f:
+                json.dump(data, f)
+        except Exception as e:
+            print("Ошибка сохранения:", e)
+
+
+
+    def load_progress(self):
+        if not os.path.exists(SAVE_FILE):
+            return False
+
+        try:
+            with open(SAVE_FILE, "r") as f:
+                data = json.load(f)
+
+            self.room_number = data.get("room_number", 1)
+            self.level_time = data.get("level_time", 0)  # сохраняем пройденное время
+            self.level_start_time = time.time() - self.level_time  # корректируем таймер
+            self.vertical_walls = data.get("vertical_walls", [])
+            self.horizontal_walls = data.get("horizontal_walls", [])
+            self.start_rect = data.get("start_rect", None)
+            self.end_rect = data.get("end_rect", None)
+
+            self.bullet_active = data.get("bullet_active", False)
+            bullet_data = data.get("bullet", None)
+            if bullet_data:
+                self.bullet = Bullet(
+                    bullet_data["x"],
+                    bullet_data["y"],
+                    bullet_data["dx"],
+                    bullet_data["dy"],
+                    bullet_data.get("radius", 5),
+                )
+            else:
+                self.bullet = None
+
+            self.cooldown = data.get("cooldown", 0)
+            self.last_shield_time = data.get("last_shield_time", 0)
+            self.shield_active = data.get("shield_active", False)
+
+            return True
+
+        except Exception as e:
+            print("Ошибка загрузки:", e)
+            return False
+
+
 
     def generate_maze(self):
         self.vertical_walls.clear()
         self.horizontal_walls.clear()
+        self.level_start_time = time.time()
+
 
         v_walls = [[True for _ in range(COLS + 1)] for _ in range(ROWS)]
         h_walls = [[True for _ in range(COLS)] for _ in range(ROWS + 1)]
@@ -141,6 +327,7 @@ class GameWindow(arcade.Window):
                             c * CELL + WALL / 2, r * CELL + CELL / 2, WALL, CELL
                         )
                     )
+
         for r in range(ROWS + 1):
             for c in range(COLS):
                 if h_walls[r][c]:
@@ -166,67 +353,87 @@ class GameWindow(arcade.Window):
         self.aim_line = None
         self.shield_active = False
 
+        
+        
+
+
     def on_draw(self):
         self.clear()
 
+        
         if self.show_start_screen:
             arcade.draw_text(
                 "bullet in the mosaic",
-                SCREEN_WIDTH / 2,
-                SCREEN_HEIGHT / 2 + 40,
+                SCREEN_WIDTH // 2,
+                SCREEN_HEIGHT // 2 + 90,
                 TITLE_COLOR,
                 36,
                 anchor_x="center",
-                anchor_y="center",
             )
-            arcade.draw_text(
-                "нажмите любую клавишу или кнопку мыши, чтобы начать играть",
-                SCREEN_WIDTH / 2,
-                SCREEN_HEIGHT / 2 - 20,
-                SUBTITLE_COLOR,
-                14,
-                anchor_x="center",
-                anchor_y="center",
-            )
+
+            
+            self.draw_button(self.start_continue_button, "Продолжить прохождение")
+            self.draw_button(self.start_new_button, "Начать заново")
             return
 
+        
         _draw_rectangle_filled_center(
-            SCREEN_WIDTH / 2,
-            MAZE_HEIGHT + HUD_HEIGHT / 2,
+            SCREEN_WIDTH // 2,
+            self.hud_y,
             SCREEN_WIDTH,
             HUD_HEIGHT,
             HUD_COLOR,
         )
+
+        
         arcade.draw_text(
-            self.room_text,
-            10,
-            MAZE_HEIGHT + HUD_HEIGHT / 2,
+            f"Комната: {self.room_number}",
+            *self.room_text_pos,
             arcade.color.BLACK,
-            18,
+            16,
             anchor_y="center",
         )
 
-        self.draw_button(
-            self.shield_button,
-            f"Остановить пулю (КД: {self.get_cooldown()})"
-            if self.cooldown > 0
-            else "Остановить пулю",
+        
+        arcade.draw_text(
+            f"{self.level_time:.1f} сек",
+            *self.timer_pos,
+            arcade.color.BLACK,
+            16,
+            anchor_x="center",
+            anchor_y="center",
         )
+
+        
+        shield_text = (
+            f"Стоп пуля ({self.get_cooldown()})"
+            if self.cooldown > 0
+            else "Остановить пулю"
+        )
+
+        self.draw_button(self.shield_button, shield_text)
         self.draw_button(self.menu_button, "Главное меню")
 
+        
         for x, y, w, h in self.vertical_walls + self.horizontal_walls:
             _draw_rectangle_filled_center(x + w / 2, y + h / 2, w, h, WALL_COLOR)
 
+        
         sx, sy, sw, sh = self.start_rect
         _draw_rectangle_filled_center(sx + sw / 2, sy + sh / 2, sw, sh, START_COLOR)
+
         ex, ey, ew, eh = self.end_rect
         _draw_rectangle_filled_center(ex + ew / 2, ey + eh / 2, ew, eh, END_COLOR)
 
+        
         if self.aim_line:
-            arcade.draw_line(*self.aim_line, arcade.color.RED, 4)
+            arcade.draw_line(*self.aim_line, arcade.color.RED, 3)
 
+        
         if self.bullet_active and self.bullet:
             self.bullet.draw()
+
+
 
     def draw_button(self, rect, text):
         x, y, w, h = rect
@@ -244,6 +451,19 @@ class GameWindow(arcade.Window):
             anchor_y="center",
         )
 
+
+
+
+    def play_bounce(self):
+        if not self.bounce_sound:
+            return
+
+        speed = math.hypot(self.bullet.dx, self.bullet.dy)
+        volume = min(0.2 + speed / 50, 0.6)
+        arcade.play_sound(self.bounce_sound, volume=volume)
+
+
+
     def get_cooldown(self):
         if self.cooldown == 0:
             self.shield_active = False
@@ -256,6 +476,13 @@ class GameWindow(arcade.Window):
         return remaining
 
     def on_update(self, delta_time):
+
+        if self.show_start_screen or self.paused:
+            return
+
+
+        self.level_time = time.time() - self.level_start_time
+
         sx, sy, sw, sh = self.start_rect
         start_x = sx + sw / 2
         start_y = sy + sh / 2
@@ -355,6 +582,7 @@ class GameWindow(arcade.Window):
                                 )
 
             if nearest_x_collision:
+
                 (
                     col_x,
                     wall_left,
@@ -364,6 +592,7 @@ class GameWindow(arcade.Window):
                 ) = nearest_x_collision
                 new_x = col_x
                 b.dx *= -1
+                self.play_bounce()
             else:
                 new_x = tentative_x
 
@@ -418,6 +647,7 @@ class GameWindow(arcade.Window):
                 ) = nearest_y_collision
                 new_y = col_y
                 b.dy *= -1
+                self.play_bounce()
             else:
                 new_y = tentative_y
 
@@ -464,25 +694,54 @@ class GameWindow(arcade.Window):
             ex, ey, ew, eh = self.end_rect
             if ex <= b.x <= ex + ew and ey <= b.y <= ey + eh:
                 self.room_number += 1
+                self.save_progress()      # Сохраняем ДО сброса таймера
+                self.level_time = 0
                 self.generate_maze()
+
                 self.bullet_active = False
                 self.bullet = None
 
     def on_key_press(self, key, modifiers):
+        # Если на стартовом экране — убираем его и корректируем таймер
         if self.show_start_screen:
             self.show_start_screen = False
+            pause_duration = time.time() - self.pause_start_time
+            self.level_start_time += pause_duration
+            self.paused = False
             return
+
+        # Пропуск уровня по пробелу
         if key == arcade.key.SPACE:
             self.room_number += 1
             self.generate_maze()
+
+        # Выход из игры
         if key == arcade.key.ESCAPE:
             self.close()
 
+
     def on_mouse_press(self, x, y, button, modifiers):
+        # --- Стартовый экран ---
         if self.show_start_screen:
-            self.show_start_screen = False
+            if self.point_in_rect(x, y, self.start_continue_button):
+                self.show_start_screen = False
+                pause_duration = time.time() - self.pause_start_time
+                self.level_start_time += pause_duration
+                self.paused = False
+
+            elif self.point_in_rect(x, y, self.start_new_button):
+                if os.path.exists(SAVE_FILE):
+                    os.remove(SAVE_FILE)
+
+                self.room_number = 1
+                self.level_start_time = time.time()
+                self.generate_maze()
+
+                self.show_start_screen = False
+                self.paused = False
             return
 
+        # --- Кнопка "Стоп пуля" ---
         if self.point_in_rect(x, y, self.shield_button) and self.cooldown == 0:
             if self.bullet_active and self.bullet:
                 cx, cy, w, h = self.start_rect
@@ -494,8 +753,14 @@ class GameWindow(arcade.Window):
             self.last_shield_time = time.time()
             self.shield_active = True
 
+        # --- Кнопка "Главное меню" ---
         elif self.point_in_rect(x, y, self.menu_button):
+            self.save_progress()
             self.show_start_screen = True
+            self.paused = True
+            self.pause_start_time = time.time()
+
+        # --- Запуск пули ---
         else:
             if not self.bullet_active:
                 sx, sy, sw, sh = self.start_rect
@@ -512,6 +777,8 @@ class GameWindow(arcade.Window):
                     self.bullet_active = True
                     self.aim_line = None
 
+
+
     def on_mouse_motion(self, x, y, dx, dy):
         self._mouse_x = x
         self._mouse_y = y
@@ -520,6 +787,11 @@ class GameWindow(arcade.Window):
     def point_in_rect(px, py, rect):
         x, y, w, h = rect
         return x <= px <= x + w and y <= py <= y + h
+    
+    def on_close(self):
+        self.save_progress()
+        super().on_close()
+
 
 
 def main():
