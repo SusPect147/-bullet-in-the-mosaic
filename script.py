@@ -37,8 +37,87 @@ BUTTON_COLOR = arcade.color.LIGHT_GRAY
 BUTTON_HOVER_COLOR = arcade.color.GRAY
 BUTTON_TEXT_COLOR = arcade.color.BLACK
 
+BUTTON_RADIUS = 10
+SHADOW_OFFSET = 4
+SHADOW_COLOR = (0, 0, 0, 120)  # полупрозрачная тень
 COOLDOWN_MAX = 7
 SAVE_FILE = "save.json"
+
+# --- UI функции ---
+BUTTON_RADIUS = 10
+SHADOW_OFFSET = 4
+
+def draw_rounded_button(x, y, w, h, color, shadow=True):
+    """
+    Рисует кнопку с тенью и скруглением.
+    x, y - левый нижний угол
+    w, h - ширина и высота
+    color - цвет кнопки
+    shadow - включить тень
+    """
+    SHADOW_OFFSET = 4
+    # Тень
+    if shadow:
+        arcade.draw_lrbt_rectangle_filled(
+            left=x + SHADOW_OFFSET,
+            right=x + w + SHADOW_OFFSET,
+            bottom=y - SHADOW_OFFSET,
+            top=y + h - SHADOW_OFFSET,
+            color=(0, 0, 0, 100)
+        )
+
+    # Кнопка
+    arcade.draw_lrbt_rectangle_filled(
+        left=x,
+        right=x + w,
+        bottom=y,
+        top=y + h,
+        color=color
+    )
+
+    # Обводка
+    arcade.draw_lrbt_rectangle_outline(
+        left=x,
+        right=x + w,
+        bottom=y,
+        top=y + h,
+        color=arcade.color.BLACK,
+        border_width=2
+    )
+
+
+def draw_button_with_text(x, y, w, h, text, mouse_x, mouse_y):
+    """
+    Рисует кнопку с hover-эффектом и текстом.
+    """
+    hovered = x <= mouse_x <= x + w and y <= mouse_y <= y + h
+    color = arcade.color.GRAY if hovered else arcade.color.LIGHT_GRAY
+    draw_rounded_button(x, y, w, h, color, shadow=True)
+
+    arcade.draw_text(
+        text,
+        x + w / 2,
+        y + h / 2,
+        arcade.color.BLACK,
+        14,
+        anchor_x="center",
+        anchor_y="center",
+        bold=True
+    )
+
+
+
+def _draw_rectangle_filled_center(cx, cy, w, h, color):
+    hw = w / 2
+    hh = h / 2
+    points = [
+        (cx - hw, cy - hh),
+        (cx + hw, cy - hh),
+        (cx + hw, cy + hh),
+        (cx - hw, cy + hh),
+    ]
+    arcade.draw_polygon_filled(points, color)
+
 
 
 
@@ -56,6 +135,7 @@ def _draw_rectangle_filled_center(cx, cy, w, h, color):
         (cx - hw, cy + hh),
     ]
     arcade.draw_polygon_filled(points, color)
+
 
 
 class Bullet:
@@ -143,7 +223,7 @@ class GameWindow(arcade.Window):
     def save_progress(self):
         data = {
             "room_number": self.room_number,
-            "level_start_time": self.level_start_time,
+            "level_time": self.level_time,  # сохраняем пройденное время
             "vertical_walls": self.vertical_walls,
             "horizontal_walls": self.horizontal_walls,
             "start_rect": self.start_rect,
@@ -168,6 +248,7 @@ class GameWindow(arcade.Window):
             print("Ошибка сохранения:", e)
 
 
+
     def load_progress(self):
         if not os.path.exists(SAVE_FILE):
             return False
@@ -178,6 +259,7 @@ class GameWindow(arcade.Window):
 
             self.room_number = data.get("room_number", 1)
             self.level_time = data.get("level_time", 0)  # сохраняем пройденное время
+            self.level_start_time = time.time() - self.level_time  # корректируем таймер
             self.vertical_walls = data.get("vertical_walls", [])
             self.horizontal_walls = data.get("horizontal_walls", [])
             self.start_rect = data.get("start_rect", None)
@@ -205,6 +287,7 @@ class GameWindow(arcade.Window):
         except Exception as e:
             print("Ошибка загрузки:", e)
             return False
+
 
 
     def generate_maze(self):
@@ -367,6 +450,9 @@ class GameWindow(arcade.Window):
             anchor_x="center",
             anchor_y="center",
         )
+
+
+
 
     def play_bounce(self):
         if not self.bounce_sound:
@@ -616,24 +702,27 @@ class GameWindow(arcade.Window):
                 self.bullet = None
 
     def on_key_press(self, key, modifiers):
-
+        # Если на стартовом экране — убираем его и корректируем таймер
         if self.show_start_screen:
             self.show_start_screen = False
             pause_duration = time.time() - self.pause_start_time
             self.level_start_time += pause_duration
             self.paused = False
-
             return
+
+        # Пропуск уровня по пробелу
         if key == arcade.key.SPACE:
             self.room_number += 1
             self.generate_maze()
+
+        # Выход из игры
         if key == arcade.key.ESCAPE:
             self.close()
 
-    def on_mouse_press(self, x, y, button, modifiers):
 
+    def on_mouse_press(self, x, y, button, modifiers):
+        # --- Стартовый экран ---
         if self.show_start_screen:
-            
             if self.point_in_rect(x, y, self.start_continue_button):
                 self.show_start_screen = False
                 pause_duration = time.time() - self.pause_start_time
@@ -649,12 +738,10 @@ class GameWindow(arcade.Window):
                 self.generate_maze()
 
                 self.show_start_screen = False
-
                 self.paused = False
-
             return
 
-        
+        # --- Кнопка "Стоп пуля" ---
         if self.point_in_rect(x, y, self.shield_button) and self.cooldown == 0:
             if self.bullet_active and self.bullet:
                 cx, cy, w, h = self.start_rect
@@ -666,13 +753,15 @@ class GameWindow(arcade.Window):
             self.last_shield_time = time.time()
             self.shield_active = True
 
+        # --- Кнопка "Главное меню" ---
         elif self.point_in_rect(x, y, self.menu_button):
             self.save_progress()
             self.show_start_screen = True
             self.paused = True
             self.pause_start_time = time.time()
+
+        # --- Запуск пули ---
         else:
-            
             if not self.bullet_active:
                 sx, sy, sw, sh = self.start_rect
                 start_x = sx + sw / 2
@@ -687,6 +776,7 @@ class GameWindow(arcade.Window):
                     self.bullet = Bullet(start_x, start_y, dx * speed, dy * speed)
                     self.bullet_active = True
                     self.aim_line = None
+
 
 
     def on_mouse_motion(self, x, y, dx, dy):
