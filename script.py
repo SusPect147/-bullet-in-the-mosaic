@@ -306,25 +306,43 @@ class GameWindow(arcade.Window):
                 data = json.load(f)
 
             self.room_number = data.get("room_number", 1)
+            self.room_text = f"Комната: {self.room_number}"
             self.level_time = data.get("level_time", 0)  # сохраняем пройденное время
             self.level_start_time = time.time() - self.level_time  # корректируем таймер
-            self.vertical_walls = data.get("vertical_walls", [])
-            self.horizontal_walls = data.get("horizontal_walls", [])
-            self.start_rect = data.get("start_rect", None)
-            self.end_rect = data.get("end_rect", None)
+
+            self.vertical_walls = [tuple(v) for v in data.get("vertical_walls", [])]
+            self.horizontal_walls = [tuple(h) for h in data.get("horizontal_walls", [])]
+            self.start_rect = tuple(data.get("start_rect")) if data.get("start_rect") is not None else None
+            self.end_rect = tuple(data.get("end_rect")) if data.get("end_rect") is not None else None
+
 
             self.bullet_active = data.get("bullet_active", False)
             bullet_data = data.get("bullet", None)
             if bullet_data:
-                self.bullet = Bullet(
+                # Bullet -> BulletSprite (в коде у вас класс называется BulletSprite)
+                self.bullet = BulletSprite(
                     bullet_data["x"],
                     bullet_data["y"],
                     bullet_data["dx"],
                     bullet_data["dy"],
-                    bullet_data.get("radius", 5),
+                    radius=bullet_data.get("radius", 5),
                 )
+                # Добавляем спрайт в список отрисовки, если нужно
+                try:
+                    # убедимся, что список существует
+                    self.all_sprites.append(self.bullet)
+                except Exception:
+                    self.all_sprites = arcade.SpriteList()
+                    self.all_sprites.append(self.bullet)
+
+                self.bullet_sprite = self.bullet
+                self.bullet_active = True
             else:
                 self.bullet = None
+                self.bullet_sprite = None
+                # оставляем bullet_active как в файле (можно явно сбросить)
+                # self.bullet_active = False
+
 
             self.cooldown = data.get("cooldown", 0)
             self.last_shield_time = data.get("last_shield_time", 0)
