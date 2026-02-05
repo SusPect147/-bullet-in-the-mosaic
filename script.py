@@ -138,17 +138,59 @@ def _draw_rectangle_filled_center(cx, cy, w, h, color):
 
 
 
-class Bullet:
-    def __init__(self, x, y, dx, dy, radius=5, color=arcade.color.WHITE):
-        self.x = x
-        self.y = y
+class BulletSprite(arcade.SpriteCircle):
+    def __init__(self, x, y, dx, dy, radius=5, color=arcade.color.YELLOW):
+        # SpriteCircle(radius, color) сразу рисует круглый спрайт
+        super().__init__(radius, color)
+        self.center_x = x
+        self.center_y = y
         self.dx = dx
         self.dy = dy
         self.radius = radius
-        self.color = color
+
+    # Алиасы x/y чтобы существующая логика (b.x / b.y) работала
+    @property
+    def x(self):
+        return self.center_x
+
+    @x.setter
+    def x(self, value):
+        self.center_x = value
+
+    @property
+    def y(self):
+        return self.center_y
+
+    @y.setter
+    def y(self, value):
+        self.center_y = value
+
+    def update(self):
+        self.center_x += self.dx
+        self.center_y += self.dy
+
+
+
+class Particle:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.dx = random.uniform(-2.0, 2.0)
+        self.dy = random.uniform(-2.0, 2.0)
+        self.life = random.uniform(0.1, 0.3)
+        self.max_life = self.life
+        self.radius = random.uniform(0.5, 1.2)
+
+    def update(self, dt):
+        self.x += self.dx
+        self.y += self.dy
+        self.life -= dt
 
     def draw(self):
-        arcade.draw_circle_filled(self.x, self.y, self.radius, self.color)
+        alpha = int(255 * max(0, self.life / self.max_life))
+        color = (255, 255, 255, alpha)
+        arcade.draw_circle_filled(self.x, self.y, self.radius, color)
+
 
 
 class GameWindow(arcade.Window):
@@ -162,6 +204,8 @@ class GameWindow(arcade.Window):
             self.bounce_sound = None
         super().__init__(SCREEN_WIDTH, SCREEN_HEIGHT, WINDOW_TITLE)
         arcade.set_background_color(BACKGROUND_COLOR)
+        self.start_texture = arcade.load_texture("assets/start.png")
+
 
         # Стартовый экран
         self.show_start_screen = True
@@ -198,6 +242,10 @@ class GameWindow(arcade.Window):
 
         self.bullet = None
         self.bullet_active = False
+        self.particles = []
+        self.all_sprites = arcade.SpriteList()
+        self.bullet_sprite = None
+
         self.aim_line = None
 
         self.cooldown = 0
@@ -420,7 +468,15 @@ class GameWindow(arcade.Window):
 
         
         sx, sy, sw, sh = self.start_rect
-        _draw_rectangle_filled_center(sx + sw / 2, sy + sh / 2, sw, sh, START_COLOR)
+        # Нарисовать текстуру: первый аргумент — texture, второй — rect (здесь используем arcade.XYWH)
+        arcade.draw_texture_rect(
+                self.start_texture,
+                arcade.XYWH(sx + sw / 2, sy + sh / 2, sw, sh)
+        )
+
+
+
+
 
         ex, ey, ew, eh = self.end_rect
         _draw_rectangle_filled_center(ex + ew / 2, ey + eh / 2, ew, eh, END_COLOR)
@@ -429,9 +485,12 @@ class GameWindow(arcade.Window):
         if self.aim_line:
             arcade.draw_line(*self.aim_line, arcade.color.RED, 3)
 
-        
-        if self.bullet_active and self.bullet:
-            self.bullet.draw()
+        for p in self.particles:
+            p.draw()
+
+        if self.bullet_active and self.bullet_sprite:
+            self.all_sprites.draw()
+
 
 
 
@@ -531,6 +590,9 @@ class GameWindow(arcade.Window):
         self.aim_line = (start_x, start_y, hit_x, hit_y)
 
         if self.bullet_active and self.bullet:
+            for _ in range(2):
+                self.particles.append(Particle(self.bullet.x, self.bullet.y))
+
             b = self.bullet
             new_x = b.x
             new_y = b.y
@@ -693,13 +755,30 @@ class GameWindow(arcade.Window):
 
             ex, ey, ew, eh = self.end_rect
             if ex <= b.x <= ex + ew and ey <= b.y <= ey + eh:
+                # прошли уровень
                 self.room_number += 1
-                self.save_progress()      # Сохраняем ДО сброса таймера
+                self.save_progress()
                 self.level_time = 0
                 self.generate_maze()
 
+                # выключаем пулю и удаляем спрайт
                 self.bullet_active = False
                 self.bullet = None
+                if self.bullet_sprite and self.bullet_sprite in self.all_sprites:
+                    self.all_sprites.remove(self.bullet_sprite)
+                self.bullet_sprite = None
+
+                # очистка частиц
+                self.particles.clear()
+
+
+
+            # --- обновление частиц ---
+            for p in self.particles[:]:
+                p.update(delta_time)
+                if p.life <= 0:
+                    self.particles.remove(p)
+
 
     def on_key_press(self, key, modifiers):
         # Если на стартовом экране — убираем его и корректируем таймер
@@ -746,12 +825,20 @@ class GameWindow(arcade.Window):
             if self.bullet_active and self.bullet:
                 cx, cy, w, h = self.start_rect
                 self.start_rect = center_to_lbwh(self.bullet.x, self.bullet.y, w, h)
+
+                # выключаем пулю в логике
                 self.bullet_active = False
                 self.bullet = None
+
+                # убираем спрайт из списка отрисовки, если он там есть
+                if self.bullet_sprite and self.bullet_sprite in self.all_sprites:
+                    self.all_sprites.remove(self.bullet_sprite)
+                self.bullet_sprite = None
 
             self.cooldown = COOLDOWN_MAX
             self.last_shield_time = time.time()
             self.shield_active = True
+
 
         # --- Кнопка "Главное меню" ---
         elif self.point_in_rect(x, y, self.menu_button):
@@ -763,6 +850,7 @@ class GameWindow(arcade.Window):
         # --- Запуск пули ---
         else:
             if not self.bullet_active:
+                self.particles.clear()
                 sx, sy, sw, sh = self.start_rect
                 start_x = sx + sw / 2
                 start_y = sy + sh / 2
@@ -773,10 +861,15 @@ class GameWindow(arcade.Window):
                     dx /= length
                     dy /= length
                     speed = 10
-                    self.bullet = Bullet(start_x, start_y, dx * speed, dy * speed)
+                    self.bullet_sprite = BulletSprite(start_x, start_y, dx * speed, dy * speed, radius=5)
+                    self.all_sprites.append(self.bullet_sprite)  # добавляем в список спрайтов
+                    # синхронизируем старую логику с новым спрайтом:
+                    self.bullet = self.bullet_sprite
                     self.bullet_active = True
                     self.aim_line = None
 
+
+                
 
 
     def on_mouse_motion(self, x, y, dx, dy):
